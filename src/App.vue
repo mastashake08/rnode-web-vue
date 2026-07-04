@@ -25,6 +25,24 @@ function addLog(kind, message) {
   if (log.value.length > 200) log.value.pop()
 }
 
+const showBanner = ref(localStorage.getItem('rnode-banner-dismissed') !== 'true')
+function dismissBanner() {
+  showBanner.value = false
+  localStorage.setItem('rnode-banner-dismissed', 'true')
+}
+
+const notificationsSupported = typeof Notification !== 'undefined'
+const notificationsEnabled = ref(notificationsSupported && Notification.permission === 'granted')
+async function enableNotifications() {
+  if (!notificationsSupported) return
+  const permission = await Notification.requestPermission()
+  notificationsEnabled.value = permission === 'granted'
+}
+function notify(title, body) {
+  if (!notificationsEnabled.value) return
+  new Notification(title, { body, icon: './icons/icon-192.png' })
+}
+
 rnode.addEventListener('connected', (e) => {
   connectionType.value = e.detail.type
   addLog('status', `Connected via ${e.detail.type}${e.detail.name ? ' (' + e.detail.name + ')' : ''}`)
@@ -40,8 +58,14 @@ rnode.addEventListener('key-ready', () => {
   keyReady.value = true
   addLog('status', 'Pre-shared key set')
 })
-rnode.addEventListener('plaintext', (e) => addLog('rx', `Plaintext: ${e.detail.text}`))
-rnode.addEventListener('decrypted-text', (e) => addLog('rx', `Decrypted: ${e.detail.text}`))
+rnode.addEventListener('plaintext', (e) => {
+  addLog('rx', `Plaintext: ${e.detail.text}`)
+  notify('RNode message received', e.detail.text)
+})
+rnode.addEventListener('decrypted-text', (e) => {
+  addLog('rx', `Decrypted: ${e.detail.text}`)
+  notify('RNode message received', e.detail.text)
+})
 rnode.addEventListener('decryption-failed', () => addLog('error', 'Failed to decrypt an incoming packet'))
 rnode.addEventListener('config-frequency', (e) => addLog('config', `Radio confirmed frequency: ${(e.detail.hz / 1e6).toFixed(3)} MHz`))
 rnode.addEventListener('config-bandwidth', (e) => addLog('config', `Radio confirmed bandwidth: ${(e.detail.hz / 1e3).toFixed(1)} kHz`))
@@ -120,10 +144,31 @@ onBeforeUnmount(() => {
   <div class="app">
     <header>
       <h1>RNode Console</h1>
-      <span class="status" :class="{ on: isConnected }">
-        {{ isConnected ? `Connected (${connectionType})` : 'Disconnected' }}
-      </span>
+      <div class="header-actions">
+        <button
+          v-if="notificationsSupported && !notificationsEnabled"
+          class="ghost"
+          @click="enableNotifications"
+        >
+          🔔 Enable notifications
+        </button>
+        <span class="status" :class="{ on: isConnected }">
+          {{ isConnected ? `Connected (${connectionType})` : 'Disconnected' }}
+        </span>
+      </div>
     </header>
+
+    <div class="banner" v-if="showBanner">
+      <button class="banner-close" @click="dismissBanner" aria-label="Dismiss">×</button>
+      <h2>How to use RNode Console</h2>
+      <ol>
+        <li>Click <strong>Connect via USB</strong> or <strong>Connect via Bluetooth</strong> to pair with your RNode device.</li>
+        <li>(Optional) Enter a pre-shared passphrase and click <strong>Set Key</strong> to enable AES-GCM encryption for outgoing/incoming messages.</li>
+        <li>Adjust <strong>frequency, bandwidth, spreading factor, coding rate, and TX power</strong>, then click <strong>Apply Tuning</strong> to push settings to the radio.</li>
+        <li>Type a message and hit <strong>Send</strong> — check <strong>Encrypt</strong> first if you've set a key.</li>
+        <li>Enable notifications (top right) to get alerted when a message arrives while this tab is in the background.</li>
+      </ol>
+    </div>
 
     <section class="panel">
       <h2>Connection</h2>
@@ -215,6 +260,49 @@ header {
 h1 {
   font-size: 1.4rem;
   margin: 0;
+}
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.ghost {
+  background: transparent;
+  color: #2563eb;
+  border: 1px solid #2563eb;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.8rem;
+}
+.banner {
+  position: relative;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  padding: 1rem 2.25rem 1rem 1rem;
+  margin-bottom: 1rem;
+}
+.banner h2 {
+  font-size: 0.95rem;
+  margin: 0 0 0.5rem 0;
+  color: #1e3a8a;
+}
+.banner ol {
+  margin: 0;
+  padding-left: 1.2rem;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: #1e3a8a;
+}
+.banner-close {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  background: transparent;
+  color: #1e3a8a;
+  border: none;
+  padding: 0.1rem 0.4rem;
+  font-size: 1.1rem;
+  line-height: 1;
 }
 .status {
   padding: 0.2rem 0.6rem;
